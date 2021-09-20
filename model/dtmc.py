@@ -1,19 +1,29 @@
 import numpy as np
-import utils
+from utils import gen_utils
 
 
-def create_transition_matrix_from_sequence(sequence):
-    pool = utils.remove_duplicates_from_list(sequence)  # maintains the order of appearing elements
+def control_last_element_transition(sequence, pool):
     # if last element has no transition and is the only one appearing in the entire sequence
     last_element = sequence[-1]
+    num_indexes_to_eliminate = 0
     if sequence.count(last_element) == 1:
         pool.remove(last_element)
-        l = 2
+        sequence.pop(-1)
+        num_indexes_to_eliminate = 2
     else:
-        l = 1
+        num_indexes_to_eliminate = 1
+    return num_indexes_to_eliminate, pool
+
+def create_transition_matrix_from_sequence(sequence):
+    pool = gen_utils.remove_duplicates_from_list(sequence)  # maintains the order of appearing elements
+    num_indexes_to_eliminate = 0
+    temp = 0
+    while temp != 1:
+        temp, pool = control_last_element_transition(sequence, pool)
+        num_indexes_to_eliminate = num_indexes_to_eliminate + temp
     # actual transition matrix creation
     transition_matrix = np.zeros((len(pool), len(pool)))
-    for i in range(len(sequence)-l):
+    for i in range(len(sequence)-num_indexes_to_eliminate):
         transition_matrix[pool.index(sequence[i]), pool.index(sequence[i+1])] += 1
     for i in range(len(pool)):
         row_tot = 0
@@ -28,11 +38,9 @@ def create_transition_matrix_from_sequence(sequence):
         raise Exception
 
 
-def sample_pitch_duration_attack(pitches, p_pitches, durations, p_durations, attacks, p_attacks):
-    p = np.random.choice(a=pitches, p=p_pitches)
-    d = utils.get_note_duration_as_number(np.random.choice(a=durations, p=p_durations))
-    a = utils.get_note_duration_as_number(np.random.choice(a=attacks, p=p_attacks))
-    return p, d, a      # numbers
+def sample(dataset, probs):
+    result = np.random.choice(a=dataset, p=probs)
+    return result, dataset.index(result)
 
 
 def generate_equiprobable_initial_probability_vector(dataset_pool):
@@ -60,3 +68,26 @@ def is_well_formatted(matrix):
                 return False
     # return (not np.any(np.sum(matrix, axis=1) != 1)) and (quad)
     return quad
+
+
+def compute_heuristic_coeff(sequence):
+    deltas = []
+    for i in range(len(sequence)-1):
+        deltas.append(np.abs(sequence[i+1]-sequence[i]))
+    max = np.amax(sequence)
+    min = np.amin(sequence)
+    return (np.mean(deltas) + np.abs(max-min)) / 2
+
+
+def is_lead_melody(coeff_heuristic):
+    return coeff_heuristic < 12.3
+
+
+# to be deleted?
+def compute_heuristic_coeff2(duration_sequence, bpm):
+    threshold = 110 / (1/2)
+    d = gen_utils.element_most_occurrences(duration_sequence)
+    if bpm/d >= threshold:
+        return threshold
+    else:
+        return bpm/d

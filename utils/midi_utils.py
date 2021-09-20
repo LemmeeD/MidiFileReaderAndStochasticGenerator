@@ -1,7 +1,7 @@
 import os
 import mido
 from fractions import Fraction
-import utils
+from utils import gen_utils
 
 
 def clean_duplicate_tracks(mid):
@@ -59,9 +59,15 @@ def get_first_tempo_as_bpm(mid):
                     return int(mido.tempo2bpm(msg.tempo))
 
 
+def get_ticks_per_measure(ticks_per_beat, num, den):
+    if den == 4:
+        return num*ticks_per_beat
+    else:
+        return num*ticks_per_beat*(4/den)
+
 
 # the end of note can be an 'note_off' of the same note OR ANOTHER 'note_on' event of the same note but with velocity 0
-def parse_note_duration(current_msg, index_current_msg, current_track, ticks_per_beat):     # as fraction as string
+def parse_note_duration(current_msg, index_current_msg, current_track, ticks_per_beat, as_ticks=False):     # as fraction as string
     ticks_elapsed = 0
     for j in range(index_current_msg + 1, len(current_track)):
         if isinstance(current_track[j], mido.messages.messages.Message) and (
@@ -69,19 +75,26 @@ def parse_note_duration(current_msg, index_current_msg, current_track, ticks_per
             (current_track[j].type == 'note_on' and current_msg.note == current_track[j].note and current_track[j].velocity == 0)
         ):
             ticks_elapsed = ticks_elapsed + current_track[j].time
-            return str(Fraction(ticks_elapsed / ticks_per_beat).limit_denominator(32))
+            if as_ticks:
+                return ticks_elapsed
+            else:
+                return str(Fraction(ticks_elapsed / ticks_per_beat).limit_denominator(32))
         else:
             ticks_elapsed = ticks_elapsed + current_track[j].time
     return None
 
 
-def parse_note_attack_of_next_note(current_track, index_current_msg, ticks_per_beat):
+
+def parse_note_attack_of_next_note(current_track, index_current_msg, ticks_per_beat, as_ticks=False):
     if index_current_msg <= len(current_track) - 2:
         tot_ticks_elapsed = 0
         for j in range(index_current_msg + 1, len(current_track)):
             if isinstance(current_track[j], mido.messages.messages.Message) and current_track[j].type == "note_on" and current_track[j].velocity > 0:  # time of a message is already a DELTA, implicitly calculating delta ticks of current note from the previous one
                 # this note_on could have time related with an intermediate vent (maybe note_off)
-                return utils.convert_ticks_to_fraction_string(current_track[j].time + tot_ticks_elapsed, ticks_per_beat)
+                if as_ticks == True:
+                    return current_track[j].time + tot_ticks_elapsed
+                else:
+                    return gen_utils.convert_ticks_to_fraction_string(current_track[j].time + tot_ticks_elapsed, ticks_per_beat)
             else:
                 tot_ticks_elapsed = tot_ticks_elapsed + current_track[j].time
 
@@ -93,17 +106,17 @@ def parse_next_note_pitch(current_track, index_current_msg):
     return None
 
 
-def parse_next_note_duration(current_track, index_current_msg, ticks_per_beat):
+def parse_next_note_duration(current_track, index_current_msg, ticks_per_beat, as_ticks=False):
     for j in range(index_current_msg + 1, len(current_track)):
         if current_track[j].type == "note_on" and current_track[j].velocity > 0:
-            return parse_note_duration(current_track[j], j, current_track, ticks_per_beat)
+            return parse_note_duration(current_track[j], j, current_track, ticks_per_beat, as_ticks=as_ticks)
     return None
 
 
-def parse_next_note_attack_of_the_next_note_again(current_track, index_current_msg, ticks_per_beat):
+def parse_next_note_attack_of_the_next_note_again(current_track, index_current_msg, ticks_per_beat, as_ticks=False):
     for j in range(index_current_msg + 1, len(current_track)):
         if current_track[j].type == "note_on" and current_track[j].velocity > 0:
-            return parse_note_attack_of_next_note(current_track, j, ticks_per_beat)
+            return parse_note_attack_of_next_note(current_track, j, ticks_per_beat, as_ticks=as_ticks)
     return None
 
 
@@ -143,3 +156,11 @@ def get_noted_note(number, diesis=True):
                  104: "Ab7", 105: "A7", 106: "Bb7", 107: "B7",
                  108: "C8"}
     return map[number]
+
+
+def compute_limit_from_parameter_T(T, ticks_per_beat, num, den, as_ticks=False):
+    ticks_per_measure = get_ticks_per_measure(ticks_per_beat, num, den)
+    if as_ticks:
+        return int(T * ticks_per_measure)
+    else:
+        return float(T * ticks_per_measure / ticks_per_beat)
